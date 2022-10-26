@@ -9,31 +9,44 @@ fi
 
 # choose the password entry
 dir=${PASSWORD_STORE_DIR-~/.password-store}
-password=$(ls $dir/**/*.gpg | sed "s#${dir}/##" | sed 's/\.gpg//' | sort | dmenu -i -l 6) 
-[ -z "$password" ] && exit 1
+chosen=$(ls $dir/**/*.gpg | sed "s#${dir}/##" | sed 's/\.gpg//' | sort | dmenu -i -l 6) 
+[ -z "$chosen" ] && exit 1
 
-# now we have the entry, show a second menu (excluding the password on the first line)
-entries=$(pass show "$password" | tail -n +2)
+# now we have the entry, show a second menu
+entries=$(pass show "$chosen")
+password=$(echo "$entries" | head -n1)
 
-# if there is an otp entry, then generate the otp to insert
-otpre='otpauth://'
-if  [[ "$entries" =~ $otpre ]]; then
-	otp=$(pass otp "$password")
-	entries="OTP: $otp
-$entries"
+function getEntry() {
+	echo "$entries" | grep -e "^$1" | sed "s#$1##"
+}
+
+otp=$(getEntry "otpauth://")
+login=$(getEntry "login: ")
+
+menu=$(echo "$entries" | tail +2)
+
+if [[ ! -z "$otp" ]]; then
+	otpval=$(pass otp "$chosen")
+	menu="OTP: $otpval
+$menu"
 fi
 
-# add a special entry that just types the password
-entries="<type password>
-$entries"
+if [[ ! -z "$login" ]]; then
+	menu="<type user+pass>
+$menu"
+fi
 
-# TODO; username TAB password
+menu="<type password>
+$menu"
 
-action=$(echo "$entries" | dmenu -i -l 6)
+action=$(echo "$menu" | dmenu -i -l 6)
 [ -z "$action" ] && exit 1
 
 if [[ "$action" = "<type password>" ]]; then
-	pass show "$password" | head -n1 | xdotool type --clearmodifiers --file -
+	pass show "$chosen" | head -n1 | xdotool type --clearmodifiers --file -
+elif [[ "$action" = "<type user+pass>" ]]; then
+	printf '%s\t%s' "$login" "$password" | xdotool type --clearmodifiers --file -
+
 else
 	echo "$action" | cut -d: -f 2-| xargs echo -n | xclip -selection clipboard
 fi
